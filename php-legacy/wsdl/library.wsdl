@@ -150,7 +150,7 @@
 
   <service name="LibraryService">
     <port name="LibraryPort" binding="tns:LibraryBinding">
-      <soap:address location="http://localhost:8080/php-legacy/soap-server.php"/>
+      <soap:address location="http://localhost/library/backend-php-legacy/soap-server.php"/>
     </port>
   </service>
 </definitions>
