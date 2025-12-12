@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<title>Гибридная система управления библиотекой</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; }
+  nav button { margin-right: 8px; }
+  .tab { display:none; margin-top: 20px; }
+  .active { display:block; }
+  table { border-collapse: collapse; width:100%; }
+  th,td { border:1px solid #ddd; padding:8px; }
+</style>
+</head>
+<body>
+  <h1>Библиотечная система — демонстрация гибридной интеграции</h1>
+  <nav>
+    <button id="btn-phys">Физические книги</button>
+    <button id="btn-dig">Цифровые ресурсы</button>
+    <button id="btn-admin">Админ-отчёт</button>
+  </nav>
+
+  <div id="tab-phys" class="tab active">
+    <h2>Поиск физических книг</h2>
+    <div>
+      <input id="inp-inv" placeholder="Инв. номер"/>
+      <input id="inp-author" placeholder="Автор"/>
+      <button id="btn-find">Найти</button>
+    </div>
+    <div id="phys-results"></div>
+  </div>
+
+  <div id="tab-dig" class="tab">
+    <h2>Цифровые ресурсы</h2>
+    <div id="dig-list"></div>
+  </div>
+
+  <div id="tab-admin" class="tab">
+    <h2>Админ: отчёт просроченных (XSLT)</h2>
+    <iframe src="/php-legacy/report.php" style="width:100%; height:500px; border:1px solid #ccc;"></iframe>
+  </div>
+
+<script>
+  const showTab = (id) => {
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  };
+  document.getElementById('btn-phys').onclick = ()=>showTab('tab-phys');
+  document.getElementById('btn-dig').onclick = ()=>{ showTab('tab-dig'); loadDigital(); };
+  document.getElementById('btn-admin').onclick = ()=>showTab('tab-admin');
+
+  document.getElementById('btn-find').onclick = async () => {
+    const inv = document.getElementById('inp-inv').value.trim();
+    const author = document.getElementById('inp-author').value.trim();
+    const container = document.getElementById('phys-results');
+    container.innerHTML = 'Загрузка...';
+    try {
+      let url = '/api/physical/books';
+      if (inv) url += '?inventory=' + encodeURIComponent(inv);
+      else if (author) url += '?author=' + encodeURIComponent(author);
+      else { container.innerHTML = '<p>Введите инв. номер или автора</p>'; return; }
+      const res = await fetch(url);
+      const json = await res.json();
+      if (!json.success) { container.innerHTML = '<pre>'+JSON.stringify(json, null, 2)+'</pre>'; return; }
+      let html = '<table><tr><th>Инв. номер</th><th>Название</th><th>Автор</th><th>Год</th><th>Статус</th><th>Действия</th></tr>';
+      if (json.book) {
+        const b = json.book;
+        html += `<tr><td>${b.inventory_number}</td><td>${b.title}</td><td>${b.author}</td><td>${b.year}</td><td>${b.status}</td><td>${renderActions(b)}</td></tr>`;
+      } else if (json.books) {
+        for (const b of json.books) {
+          html += `<tr><td>${b.inventory_number}</td><td>${b.title}</td><td>${b.author}</td><td>${b.year}</td><td>${b.status}</td><td>${renderActions(b)}</td></tr>`;
+        }
+      }
+      html += '</table>';
+      container.innerHTML = html;
+    } catch (e) {
+      container.innerHTML = 'Ошибка: '+e.message;
+    }
+  };
+
+  function renderActions(b) {
+    if (b.status === 'available') {
+      return `<button onclick="loan('${b.inventory_number}')">Выдать</button>`;
+    } else {
+      return '-';
+    }
+  }
+
+  async function loan(inv) {
+    const reader = prompt('Введите номер читательского билета:');
+    if (!reader) return;
+    const res = await fetch('/api/physical/loan', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ inventory_number:inv, reader_card:reader })});
+    const json = await res.json();
+    alert(JSON.stringify(json));
+    document.getElementById('btn-find').click();
+  }
+
+  async function loadDigital(){
+    const cont = document.getElementById('dig-list');
+    cont.innerHTML = 'Загрузка...';
+    try {
+      const res = await fetch('/api/digital/resources');
+      const json = await res.json();
+      if (!json.success) { cont.innerHTML = 'Ошибка'; return; }
+      let html = '<table><tr><th>Название</th><th>Автор</th><th>Формат</th><th>Размер (KB)</th><th>Скачивания</th><th>Действия</th></tr>';
+      for (const r of json.resources) {
+        html += `<tr><td>${r.title}</td><td>${r.author}</td><td>${r.format}</td><td>${r.fileSize || '-'}</td><td>${r.downloadCount||0}</td><td><button onclick="download('${r.id}')">Скачать</button></td></tr>`;
+      }
+      html += '</table>';
+      cont.innerHTML = html;
+    } catch (e) {
+      cont.innerHTML = 'Ошибка: '+e.message;
+    }
+  }
+
+  async function download(resourceId){
+    const userId = prompt('Ваш userId:');
+    if (!userId) return;
+    const res = await fetch('/api/digital/download', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ resourceId, userId })});
+    const json = await res.json();
+    if (json.success) {
+      alert('Ссылка: '+json.downloadLink);
+      window.location = json.downloadLink; // может быть заглушкой
+      loadDigital();
+    } else {
+      alert('Ошибка: '+JSON.stringify(json));
+    }
+  }
+</script>
+</body>
+</html>
